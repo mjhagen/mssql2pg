@@ -1,0 +1,10 @@
+{
+  "dependencies": {
+    "fw1": "^4.0.0",
+    "testbox": "^2.5.0+107"
+  },
+  "installPaths": {
+    "fw1": "framework",
+    "testbox": "tests/testbox"
+  }
+}

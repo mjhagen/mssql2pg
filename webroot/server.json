@@ -1,0 +1,12 @@
+{
+    "web":{
+        "host":"127.0.0.1",
+        "http":{
+            "enable":true,
+            "port":8080
+        },
+        "rewrites":{
+            "enable":true
+        }
+    }
+}
