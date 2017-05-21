@@ -5,9 +5,9 @@
 ### Requirements:
 
 - mustang-shared (https://github.com/mjhagen/mustang-shared)
-- Commandbox
-- Framework One
-- Testbox
+- CommandBox, which installs:
+    - Framework One
+    - TestBox
 
 ### Configuration:
 
