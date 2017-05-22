@@ -7,7 +7,7 @@ component extends="tests.mustang-testKit" {
         transferService.addIndexesAndConstraints( );
       } );
 
-      xit( "Expects asCFDatatype to work", function() {
+      it( "Expects asCFDatatype to work", function() {
         expect( transferService.asCFDatatype( "int" ) ).toBe( "integer" );
         expect( transferService.asCFDatatype( "tinyint" ) ).toBe( "bit" );
         expect( transferService.asCFDatatype( "boolean" ) ).toBe( "bit" );
@@ -18,7 +18,7 @@ component extends="tests.mustang-testKit" {
         expect( transferService.asCFDatatype( "datetime" ) ).toBe( "timestamp" );
       } );
 
-      xit( "Expects formatValueForPostgres to work", function() {
+      it( "Expects formatValueForPostgres to work", function() {
         var value = "";
         var md = { datatype = "", allownulls = false };
         var result = transferService.formatValueForPostgres( value, md );
@@ -48,7 +48,7 @@ component extends="tests.mustang-testKit" {
         }
       } );
 
-      xit( "Expects asPostgresDatatype to work", function() {
+      it( "Expects asPostgresDatatype to work", function() {
         expect( transferService.asPostgresDatatype( "date" ) ).toBe( "timestamp" );
         expect( transferService.asPostgresDatatype( "time" ) ).toBe( "timestamp" );
         expect( transferService.asPostgresDatatype( "datetime" ) ).toBe( "timestamp" );
@@ -56,7 +56,7 @@ component extends="tests.mustang-testKit" {
         expect( transferService.asPostgresDatatype( "tinyint" ) ).toBe( "boolean" );
       } );
 
-      xit( "Expects hasLength to work", function() {
+      it( "Expects hasLength to work", function() {
         var datatypes = "int,integer,smallint,bigint,tinyint,datetime,smalldatetime,text";
 
         for ( var datatype in datatypes ) {
@@ -68,13 +68,13 @@ component extends="tests.mustang-testKit" {
         expect( result ).toBeTrue( );
       } );
 
-      xit( "Expects escapePgKeyword to work", function() {
+      it( "Expects escapePgKeyword to work", function() {
         expect( transferService.escapePgKeyword( 'table' ) ).toBeWithCase( '"table"' );
         expect( transferService.escapePgKeyword( 'table' ) ).notToBeWithCase( 'table' );
         expect( transferService.escapePgKeyword( 'createDate' ) ).toBeWithCase( 'createDate' );
       } );
 
-      xit( "Expects getSourceTables to work", function() {
+      it( "Expects getSourceTables to work", function() {
         transferService.getSourceTables( );
         var instanceVars = transferService.getInstanceVariables( );
         var expectedTables = [
@@ -134,12 +134,12 @@ component extends="tests.mustang-testKit" {
         }
       } );
 
-      xit( "Expects initializeDestination / createDestinationTables to work", function() {
+      it( "Expects initializeDestination / createDestinationTables to work", function() {
         transferService.getSourceTables( 'contact' );
         expect( function () { transferService.initializeDestination( ); } ).notToThrow( );
       } );
 
-      xit( "Expects generateDestinationSQL to work", function() {
+      it( "Expects generateDestinationSQL to work", function() {
         transferService.getSourceTables( 'usersession' );
         transferService.initializeDestination( );
         transferService.generateDestinationSQL( );

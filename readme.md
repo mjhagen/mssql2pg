@@ -15,7 +15,7 @@ Set the path to mustang-shared in `Application.cfc`.
 
 Add a json file containing two keys for your source (mssql) and destination (postgres) datasources to the `/config` dir.
 
-Example:
+Example (Lucee):
 
 ```
 {
@@ -33,6 +33,8 @@ Example:
   }
 }
 ```
+
+If you run this on ACF, you'll need to change this to Adobe's format.
 
 ### Installation:
 

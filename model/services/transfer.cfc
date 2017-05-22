@@ -1,11 +1,13 @@
-component extends="mustang.services.threaded" {
+component accessors=true extends="mustang.services.threaded" {
+  property utilityService;
+
   public component function init( root, progressService ) {
     variables.sourceOptions = { datasource = "source" };
     variables.destinationOptions = { datasource = "destination" };
 
     variables.eol = chr( 13 ) & chr( 10 );
 
-    variables.pgKeywords = deserializeJson( fileRead( root & "/config/postgres-keywords.json" ) );
+    variables.pgKeywords = deserializeJson( fileRead( expandPath( root & "/config/postgres-keywords.json" ) ) );
     variables.progress = progressService.getInstance( );
 
     variables.items = [ ];
@@ -126,6 +128,8 @@ component extends="mustang.services.threaded" {
   public query function getSourceData( tableName ) {
     var table = variables.tables[ tableName ];
     var mssqlColumnList = [ ];
+
+    utilityService.setCFSetting( settingName = "requesttimeout", settingValue = 600 );
 
     for ( var column in table ) {
       arrayAppend( mssqlColumnList, "[#column.name#]" );

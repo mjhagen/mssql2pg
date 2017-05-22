@@ -6,6 +6,7 @@ component extends="framework.one" {
   this.mappings[ "/root" ] = request.root;
   this.mappings[ "/mustang" ] = expandPath( "../../mustang-shared" );
 
+  this.sessionManagement = true;
   this.datasources = deserializeJSON( fileRead( request.root & "/config/datasources.json" ) );
 
   variables.framework = {
@@ -18,6 +19,7 @@ component extends="framework.one" {
       constants = {
         root = request.root,
         config = {
+          showDebug = false,
           logLevel = "information",
           useOrm = false
         }
