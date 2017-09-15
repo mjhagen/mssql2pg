@@ -1,11 +1,12 @@
 component {
-  this.mappings[ "/root" ] = getDirectoryFromPath( getBaseTemplatePath( ) ) & "../../";
+  request.root = getDirectoryFromPath( getBaseTemplatePath( ) ) & "../../";
+  this.mappings[ "/root" ] = request.root;
   this.mappings[ "/mustang" ] = expandPath( "../../../mustang-shared" );
   this.mappings[ "/testbox" ] = expandPath( "./testbox" );
   this.mappings[ "/tests" ] = expandPath( "./" );
 
   this.sessionManagement = true;
-  this.datasources = deserializeJSON( fileRead( expandPath( "/root/config/test-datasources.json" ) ) );
+  this.datasources = deserializeJSON( fileRead( request.root & "/config/datasources.json" ) );
 
   public void function onRequestStart( ) {
     application.beanFactory = new framework.ioc(
@@ -20,7 +21,7 @@ component {
             logLevel = "information",
             useOrm = false
           },
-          root = "/root"
+          root = request.root
         }
       }
     );

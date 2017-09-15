@@ -11,4 +11,9 @@ component accessors=true {
     var data = transferService.getSyncProgress( );
     framework.renderData( "json", data );
   }
+
+  function abortQueue( rc ) {
+    transferService.abortQueue( );
+    framework.renderData( "json", true );
+  }
 }

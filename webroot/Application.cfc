@@ -19,8 +19,8 @@ component extends="framework.one" {
       constants = {
         root = request.root,
         config = {
-          showDebug = false,
-          logLevel = "information",
+          showDebug = true,
+          logLevel = "debug",
           useOrm = false
         }
       }

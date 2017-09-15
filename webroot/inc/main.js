@@ -1,31 +1,42 @@
-var $importProgress, $importStatus, prevItem;
-var intervalTime = 500;
+var $importProgress, $importStatus, $importBtn, $abortBtn, prevItem, progressUpdate;
+var intervalTime = 150;
 
-$( function() {
+$( function( ) {
   $importProgress = $( '#import-progress' );
   $importStatus = $( '#import-status' );
+  $importBtn = $( '#import' );
+  $abortBtn = $( '#abort' );
+  $abortBtn.hide( );
 
-  checkProgress();
+  checkProgress( );
 
-  $( document ).on( 'click', '#import', function() {
-    setTimeout( checkProgress, intervalTime );
+  $( document ).on( 'click', '#import', function( ) {
+    progressUpdate = setTimeout( checkProgress, intervalTime );
 
     $.ajax( ajaxUrl( 'adminapi:transfer', 'run' ), {
       complete : showProgress
-    });
+    } );
+  } );
 
-    $( this ).prop( 'disabled', true );
-  });
-});
+  $( document ).on( 'click', '#abort', function( ) {
+    $.ajax( ajaxUrl( 'adminapi:transfer', 'abortQueue' ), {
+      complete : function( ) {
+        // $importStatus.html( '' );
+        // hideProgress( );
+        // clearTimeout( progressUpdate );
+      }
+    } );
+  } );
+} );
 
-function checkProgress() {
+function checkProgress( ) {
   $.ajax( ajaxUrl( 'adminapi:transfer', 'getSyncProgress' ), {
     success : function( data ) {
       if( data.hasOwnProperty( 'done' ) && data.done ) {
         $importStatus.html( data.status );
-        hideProgress();
+        hideProgress( );
       } else {
-        showProgress();
+        showProgress( );
 
         if( data.current == 0 ) {
           $importStatus.html( 'Calculating total number of tables: ' + data.total + '<br />' + data.status );
@@ -38,7 +49,7 @@ function checkProgress() {
 
           newPercentage = ( Math.round( newPercentage * 100 ) / 100 ) + '%';
 
-          $importProgress.find( '.progress-bar' ).css({ width : newPercentage });
+          $importProgress.find( '.progress-bar' ).css({ width : newPercentage } );
           $importStatus.html( data.timeLeft + ' <span class="text-muted">(' + data.current + '/' + data.total + ')</span><br />' + data.status );
         }
 
@@ -49,24 +60,26 @@ function checkProgress() {
           intervalTime = 500;
         }
 
-        setTimeout( checkProgress, intervalTime );
+        progressUpdate = setTimeout( checkProgress, intervalTime );
         prevItem = data.current;
       }
     },
-    error : function() {
-      // hideProgress();
+    error : function( ) {
       $importStatus.html( 'Error occured, contact E-Line Websolutions' );
     }
-  });
+  } );
 }
 
-function hideProgress() {
-  $importProgress.find( '.progress-bar' ).css({ width : '0%' });
-  $( '#import' ).removeProp( 'disabled' );
+function hideProgress( ) {
+  $importProgress.find( '.progress-bar' ).css({ width : '0%' } );
+  $importBtn.removeProp( 'disabled' );
+  $abortBtn.hide( );
 }
 
-function showProgress() {
+function showProgress( ) {
   $importProgress.removeClass( 'hidden' );
+  $importBtn.prop( 'disabled', true );
+  $abortBtn.show( );
 }
 
 function ajaxUrl( action, method, data ) {

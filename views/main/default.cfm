@@ -5,6 +5,7 @@
 
   <form>
     <button id="import" type="button" class="btn btn-primary">Go now, go!</button>
+    <button id="abort" type="button" class="btn btn-danger">Abort</button>
   </form>
 </div>
 

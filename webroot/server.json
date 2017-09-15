@@ -1,6 +1,8 @@
 {
+    "openBrowser": false,
     "jvm":{
-        "heapSize":1024
+        "heapSize":8192,
+        "minHeapSize":8192
     },
     "web":{
         "host":"127.0.0.1",
@@ -11,5 +13,8 @@
         "rewrites":{
             "enable":true
         }
+    },
+    "app":{
+        "cfengine":"lucee@5"
     }
 }

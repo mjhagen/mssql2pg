@@ -2,12 +2,10 @@ component extends="tests.mustang-testKit" {
   variables.transferService = beanFactory.getBean( "transferService" );
 
   public void function run( ) {
-    describe( "Unit tests", function() {
-      it( "Expects addIndexesAndConstraints to work", function() {
-        transferService.addIndexesAndConstraints( );
-      } );
+    describe( "Unit tests", function( ) {
+      it( "Expects asCFDatatype to work", function( ) {
+        makePublic( transferService, "asCFDatatype" );
 
-      it( "Expects asCFDatatype to work", function() {
         expect( transferService.asCFDatatype( "int" ) ).toBe( "integer" );
         expect( transferService.asCFDatatype( "tinyint" ) ).toBe( "bit" );
         expect( transferService.asCFDatatype( "boolean" ) ).toBe( "bit" );
@@ -18,7 +16,9 @@ component extends="tests.mustang-testKit" {
         expect( transferService.asCFDatatype( "datetime" ) ).toBe( "timestamp" );
       } );
 
-      it( "Expects formatValueForPostgres to work", function() {
+      it( "Expects formatValueForPostgres to work", function( ) {
+        makePublic( transferService, "formatValueForPostgres" );
+
         var value = "";
         var md = { datatype = "", allownulls = false };
         var result = transferService.formatValueForPostgres( value, md );
@@ -44,11 +44,14 @@ component extends="tests.mustang-testKit" {
           md.datatype = datatype;
           value = createDate( 1978, 11, 15 );
           var result = transferService.formatValueForPostgres( value, md );
-          expect( result.value ).toBeTypeOf( "datetime_object" );
+          expect( result.value ).toBeTypeOf( "date" );
+          expect( result.value ).toBeTypeOf( "time" );
         }
       } );
 
-      it( "Expects asPostgresDatatype to work", function() {
+      it( "Expects asPostgresDatatype to work", function( ) {
+        makePublic( transferService, "asPostgresDatatype" );
+
         expect( transferService.asPostgresDatatype( "date" ) ).toBe( "timestamp" );
         expect( transferService.asPostgresDatatype( "time" ) ).toBe( "timestamp" );
         expect( transferService.asPostgresDatatype( "datetime" ) ).toBe( "timestamp" );
@@ -56,7 +59,10 @@ component extends="tests.mustang-testKit" {
         expect( transferService.asPostgresDatatype( "tinyint" ) ).toBe( "boolean" );
       } );
 
-      it( "Expects hasLength to work", function() {
+      it( "Expects hasLength to work", function( ) {
+        makePublic( transferService, "escapePgKeyword" );
+        makePublic( transferService, "hasLength" );
+
         var datatypes = "int,integer,smallint,bigint,tinyint,datetime,smalldatetime,text";
 
         for ( var datatype in datatypes ) {
@@ -68,13 +74,18 @@ component extends="tests.mustang-testKit" {
         expect( result ).toBeTrue( );
       } );
 
-      it( "Expects escapePgKeyword to work", function() {
+      it( "Expects escapePgKeyword to work", function( ) {
+        makePublic( transferService, "escapePgKeyword" );
+
         expect( transferService.escapePgKeyword( 'table' ) ).toBeWithCase( '"table"' );
         expect( transferService.escapePgKeyword( 'table' ) ).notToBeWithCase( 'table' );
         expect( transferService.escapePgKeyword( 'createDate' ) ).toBeWithCase( 'createDate' );
       } );
 
-      it( "Expects getSourceTables to work", function() {
+      it( "Expects getSourceTables to work", function( ) {
+        makePublic( transferService, "getSourceTables" );
+        makePublic( transferService, "getInstanceVariables" );
+
         transferService.getSourceTables( );
         var instanceVars = transferService.getInstanceVariables( );
         var expectedTables = [
@@ -134,19 +145,54 @@ component extends="tests.mustang-testKit" {
         }
       } );
 
-      it( "Expects initializeDestination / createDestinationTables to work", function() {
+      it( "Expects initializeDestination / createDestinationTables to work", function( ) {
+        makePublic( transferService, "getSourceTables" );
+        makePublic( transferService, "initializeDestination" );
+
         transferService.getSourceTables( 'contact' );
         expect( function () { transferService.initializeDestination( ); } ).notToThrow( );
       } );
 
-      it( "Expects generateDestinationSQL to work", function() {
+      it( "Expects generateDestinationSQL to work", function( ) {
+        makePublic( transferService, "getSourceTables" );
+        makePublic( transferService, "initializeDestination" );
+        makePublic( transferService, "generateDestinationSQL" );
+        makePublic( transferService, "getInstanceVariables" );
+        makePublic( transferService, "transferTable" );
+
         transferService.getSourceTables( 'usersession' );
         transferService.initializeDestination( );
         transferService.generateDestinationSQL( );
 
         var instanceVars = transferService.getInstanceVariables();
 
-        transferService.transferTable( instanceVars.items[ 1 ], 10 );
+        transferService.transferTable( instanceVars.items[ 1 ] );
+      } );
+
+      it( "Expects addIndexesAndConstraints to work", function( ) {
+        makePublic( transferService, "addIndexesAndConstraints" );
+        transferService.addIndexesAndConstraints( );
+      } );
+
+      it( "Expects abortQueue() to cancel all running threads", function( ) {
+        var fn = function( counter ) {
+          sleep( randRange( 5000, 15000 ) );
+        };
+
+        for ( var i = 1; i < 10; i++ ) {
+          transferService.addTask( fn, { counter = i } );
+        }
+
+        var queueWithOneItem = transferService.getTaskQueue( );
+        var numberOfItemsInQueue = arrayLen( queueWithOneItem );
+
+        expect( numberOfItemsInQueue ).toBeGTE( 1 );
+
+        transferService.abortQueue( );
+
+        var emptyQueue = transferService.getTaskQueue( );
+
+        expect( emptyQueue ).toBeEmpty( );
       } );
     } );
   }
