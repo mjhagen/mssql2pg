@@ -3,7 +3,7 @@ component extends="tests.mustang-testKit" {
 
   public void function run( ) {
     describe( "Unit tests", function( ) {
-      it( "Expects asCFDatatype to work", function( ) {
+      xit( "Expects asCFDatatype to work", function( ) {
         makePublic( transferService, "asCFDatatype" );
 
         expect( transferService.asCFDatatype( "int" ) ).toBe( "integer" );
@@ -16,7 +16,7 @@ component extends="tests.mustang-testKit" {
         expect( transferService.asCFDatatype( "datetime" ) ).toBe( "timestamp" );
       } );
 
-      it( "Expects formatValueForPostgres to work", function( ) {
+      xit( "Expects formatValueForPostgres to work", function( ) {
         makePublic( transferService, "formatValueForPostgres" );
 
         var value = "";
@@ -49,7 +49,7 @@ component extends="tests.mustang-testKit" {
         }
       } );
 
-      it( "Expects asPostgresDatatype to work", function( ) {
+      xit( "Expects asPostgresDatatype to work", function( ) {
         makePublic( transferService, "asPostgresDatatype" );
 
         expect( transferService.asPostgresDatatype( "date" ) ).toBe( "timestamp" );
@@ -59,7 +59,7 @@ component extends="tests.mustang-testKit" {
         expect( transferService.asPostgresDatatype( "tinyint" ) ).toBe( "boolean" );
       } );
 
-      it( "Expects hasLength to work", function( ) {
+      xit( "Expects hasLength to work", function( ) {
         makePublic( transferService, "escapePgKeyword" );
         makePublic( transferService, "hasLength" );
 
@@ -74,7 +74,7 @@ component extends="tests.mustang-testKit" {
         expect( result ).toBeTrue( );
       } );
 
-      it( "Expects escapePgKeyword to work", function( ) {
+      xit( "Expects escapePgKeyword to work", function( ) {
         makePublic( transferService, "escapePgKeyword" );
 
         expect( transferService.escapePgKeyword( 'table' ) ).toBeWithCase( '"table"' );
@@ -82,11 +82,12 @@ component extends="tests.mustang-testKit" {
         expect( transferService.escapePgKeyword( 'createDate' ) ).toBeWithCase( 'createDate' );
       } );
 
-      it( "Expects getSourceTables to work", function( ) {
+      xit( "Expects getSourceTables to work", function( ) {
         makePublic( transferService, "getSourceTables" );
         makePublic( transferService, "getInstanceVariables" );
 
         transferService.getSourceTables( );
+
         var instanceVars = transferService.getInstanceVariables( );
         var expectedTables = [
           "accountantmodule",
@@ -145,7 +146,7 @@ component extends="tests.mustang-testKit" {
         }
       } );
 
-      it( "Expects initializeDestination / createDestinationTables to work", function( ) {
+      xit( "Expects initializeDestination / createDestinationTables to work", function( ) {
         makePublic( transferService, "getSourceTables" );
         makePublic( transferService, "initializeDestination" );
 
@@ -153,7 +154,7 @@ component extends="tests.mustang-testKit" {
         expect( function () { transferService.initializeDestination( ); } ).notToThrow( );
       } );
 
-      it( "Expects generateDestinationSQL to work", function( ) {
+      xit( "Expects generateDestinationSQL to work", function( ) {
         makePublic( transferService, "getSourceTables" );
         makePublic( transferService, "initializeDestination" );
         makePublic( transferService, "generateDestinationSQL" );
@@ -169,12 +170,12 @@ component extends="tests.mustang-testKit" {
         transferService.transferTable( instanceVars.items[ 1 ] );
       } );
 
-      it( "Expects addIndexesAndConstraints to work", function( ) {
+      xit( "Expects addIndexesAndConstraints to work", function( ) {
         makePublic( transferService, "addIndexesAndConstraints" );
         transferService.addIndexesAndConstraints( );
       } );
 
-      it( "Expects abortQueue() to cancel all running threads", function( ) {
+      xit( "Expects abortQueue() to cancel all running threads", function( ) {
         var fn = function( counter ) {
           sleep( randRange( 5000, 15000 ) );
         };

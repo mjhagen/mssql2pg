@@ -1,4 +1,5 @@
 component {
+  this.name = request.appName = "mssql2pg-tests";
   request.root = getDirectoryFromPath( getBaseTemplatePath( ) ) & "../../";
   this.mappings[ "/root" ] = request.root;
   this.mappings[ "/mustang" ] = expandPath( "../../../mustang-shared" );

@@ -1,8 +1,8 @@
 {
-    "openBrowser": false,
+    "openBrowser":false,
     "jvm":{
-        "heapSize":8192,
-        "minHeapSize":8192
+        "heapSize":6144,
+        "args":"-XX:+UseG1GC -XX:MetaspaceSize=6g"
     },
     "web":{
         "host":"127.0.0.1",

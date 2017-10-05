@@ -3,8 +3,23 @@ component accessors=true {
   property transferService;
 
   function run( rc ) {
-    transferService.start( );
-    framework.renderData( "text", "Transfer started" );
+    cfsetting( requesttimeout = 300 );
+
+    param rc.runSingleThreaded=false;
+    param rc.skipTransfer=false;
+    transferService.start( rc.runSingleThreaded, rc.skipTransfer );
+
+    var message = "Transfer started";
+
+    if ( rc.runSingleThreaded ) {
+      message = "Transfer done";
+    }
+
+    if ( rc.skipTransfer ) {
+      message &= " (skipping transfer)";
+    }
+
+    framework.renderData( "text", message );
   }
 
   function getSyncProgress( rc ) {

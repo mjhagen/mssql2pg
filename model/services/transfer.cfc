@@ -1,6 +1,6 @@
 component accessors=true extends="mustang.services.threaded" {
-  property utilityService;
   property logService;
+  property progressService;
 
   this.pageSize = 5000;
   this.insertBatchSize = 250;
@@ -23,24 +23,28 @@ component accessors=true extends="mustang.services.threaded" {
     variables.pgKeywords = deserializeJSON( fileRead( root & "/config/postgres-keywords.json" ) );
     variables.progress = progressService.getInstance( );
 
-    variables.items = [ ];
+    variables.items = { };
     variables.tables = { };
     variables.fks = [ ];
+
+    structAppend( variables, arguments );
 
     return super.init( );
   }
 
   // PUBLIC API:
 
-  public void function start( ) {
-    prevProgress = progressService.getInstance( structKeyExists( url, "reload" ) );
+  public void function start( boolean runSingleThreaded = false, boolean skipTransfer = false ) {
+    variables.runSingleThreaded = runSingleThreaded;
+
+    prevProgress = variables.progressService.getInstance( structKeyExists( url, "reload" ) );
     prevProgress.done( );
 
     if ( !prevProgress.getDone( ) ) {
       throw( "Transfer still running", "transferService.start.stillRunningError" );
     }
 
-    variables.progress = progressService.getInstance( true );
+    variables.progress = variables.progressService.getInstance( true );
     variables.progress.setDone( false );
 
     initThreads( );
@@ -49,21 +53,23 @@ component accessors=true extends="mustang.services.threaded" {
     variables.progress.addToTotal( );
     addTask( getSourceTables );
 
-    variables.progress.setStatus( "QUEUE: Generate destination SQL" );
-    variables.progress.addToTotal( );
-    addTask( generateDestinationSQL );
+    if ( !skipTransfer ) {
+      variables.progress.setStatus( "QUEUE: Initialize destination database" );
+      variables.progress.addToTotal( );
+      addTask( initializeDestination );
 
-    variables.progress.setStatus( "QUEUE: Clear destination database" );
-    variables.progress.addToTotal( );
-    addTask( initializeDestination );
+      variables.progress.setStatus( "QUEUE: Generate destination SQL" );
+      variables.progress.addToTotal( );
+      addTask( runTransfer );
+    }
 
-    variables.progress.setStatus( "QUEUE: Run export" );
+    variables.progress.setStatus( "QUEUE: Add FKs, indexes and finish up" );
     variables.progress.addToTotal( );
-    addTask( runTransfer );
+    addTask( postProcessing );
   }
 
   public struct function getSyncProgress( ) {
-    return progressService.getProgress( );
+    return variables.progressService.getProgress( );
   }
 
   public struct function getInstanceVariables( ) {
@@ -107,6 +113,7 @@ component accessors=true extends="mustang.services.threaded" {
         ",
         "
           WHERE     tableInfo.name <> 'dtproperties'
+            AND     tableInfo.name <> 'sysdiagrams'
             AND     tableInfo.xtype = 'U'
         ",
         "
@@ -119,21 +126,20 @@ component accessors=true extends="mustang.services.threaded" {
         params[ "tableName" ] = tableName;
       }
 
-      var allTables = variables.sourceQueryService.execute( arrayToList( sql, ' ' ), params );
+      var allTables = variables.sourceQueryService.execute( sql.toList( ' ' ), params );
 
       for ( var row in allTables ) {
-        if ( !structKeyExists( sourceTableDesign, row.table ) ) {
+        if ( !sourceTableDesign.keyExists( row.table ) ) {
           sourceTableDesign[ row.table ] = { "columns" = [ ] };
         }
 
-        arrayAppend(
-          sourceTableDesign[ row.table ].columns,
+        sourceTableDesign[ row.table ].columns.add(
           {
             "name" = row.column,
             "datatype" = row.datatype,
             "length" = row.length,
-            "allowNulls" = row.allowNulls,
-            "pk" = row.pk
+            "allowNulls" = row.allowNulls > 0,
+            "pk" = row.pk > 0
           }
         );
       }
@@ -143,11 +149,20 @@ component accessors=true extends="mustang.services.threaded" {
         sourceTableDesign[ tableName ][ "rowCount" ] = rowCounter.total;
       }
 
-      variables.sortedTableKeys = structSort( sourceTableDesign, "numeric", "asc", "rowCount" );
+      variables.sortedTableNames = sourceTableDesign.sort( "numeric", "asc", "rowCount" );
+
+      // var tmp = [
+      //   variables.sortedTableNames[ 10 ],
+      //   variables.sortedTableNames[ 31 ],
+      //   variables.sortedTableNames[ 25 ],
+      //   variables.sortedTableNames[ 41 ]
+      // ];
+
+      // variables.sortedTableNames = tmp;
 
       variables.tables = sourceTableDesign;
       variables.fks = getSourceForeignKeys( );
-      variables.progress.setStatus( "#structCount( sourceTableDesign )# tables found." );
+      variables.progress.setStatus( "#sourceTableDesign.count( )# tables found." );
     } catch ( any e ) {
       variables.logService.dumpToFile( e );
       variables.progress.setStatus( e.message );
@@ -159,16 +174,27 @@ component accessors=true extends="mustang.services.threaded" {
     }
   }
 
-  private void function generateDestinationSQL( ) {
+  private void function runTransfer( ) {
     var threadName = getThreadName( );
     try {
-      var tmp = [ ];
+      var variables.items = { };
 
-      for ( var tableName in variables.sortedTableKeys ) {
-        arrayAppend( tmp, getSqlInsertForTable( tableName ) );
+      for ( var tableName in variables.sortedTableNames ) {
+        variables.items[ tableName ] = getSqlInsertForTable( tableName );
+
+        var batches = getBatches( tableName );
+
+        for ( var batch in batches ) {
+          variables.progress.setStatus( "QUEUE: '#tableName#' batch #batch.batchNr# queued" );
+          variables.progress.addToTotal( );
+          addTask( executeBatch, { "batch" = batch } );
+        }
+
+        variables.progress.setStatus( "QUEUE: '#tableName#' batch cleanup queued" );
+        variables.progress.addToTotal( );
+        addTask( clearBatches, { "tableName" = tableName } );
       }
 
-      variables.items = tmp;
       variables.progress.setStatus( "Destination SQL generated." );
     } catch ( any e ) {
       variables.logService.dumpToFile( e );
@@ -183,20 +209,15 @@ component accessors=true extends="mustang.services.threaded" {
 
   private void function initializeDestination( ) {
     var threadName = getThreadName( );
-    try {
-      var sql = "
-        DROP SCHEMA public CASCADE;
-        CREATE SCHEMA public;
-        GRANT ALL ON SCHEMA public TO postgres;
-        GRANT ALL ON SCHEMA public TO public;
-        COMMENT ON SCHEMA public IS 'standard public schema';
-      ";
 
+    variables.progress.setStatus( "Initializing destination database." );
+
+    try {
       transaction {
         try {
-          variables.destinationQueryService.execute( sql );
+          clearDestinationDatabase( );
+          createDestinationTables( );
           transactionCommit( );
-          variables.progress.setStatus( "Destination database cleared." );
         } catch ( any e ) {
           transactionRollback( );
           variables.progress.setStatus( "Error clearing destination database. (#e.detail#)" );
@@ -204,13 +225,6 @@ component accessors=true extends="mustang.services.threaded" {
         }
       }
 
-      variables.progress.setStatus( "Removing old foreign keys." );
-      removeOldForeignKeys( );
-
-      variables.progress.setStatus( "Creating destination tables." );
-      createDestinationTables( );
-
-      variables.progress.setStatus( "Destination tables generated." );
     } catch ( any e ) {
       variables.progress.done( );
       rethrow;
@@ -220,23 +234,9 @@ component accessors=true extends="mustang.services.threaded" {
     }
   }
 
-  private void function runTransfer( ) {
+  private void function postProcessing( ) {
     var threadName = getThreadName( );
     try {
-      variables.progress.setStatus( "Generating batch operations" );
-      var tableOperations = [ ];
-      for ( var item in variables.items ) {
-        tableOperations.add( getBatches( item ) );
-      }
-
-      variables.progress.setStatus( "QUEUE: Add batches to queue" );
-      for ( var batches in tableOperations ) {
-        for ( var batch in batches ) {
-          variables.progress.addToTotal( );
-          addTask( queueBatch, batch );
-        }
-      }
-
       variables.progress.setStatus( "QUEUE: Add indexes and constraints" );
       variables.progress.addToTotal( );
       addTask( addIndexesAndConstraints );
@@ -260,49 +260,22 @@ component accessors=true extends="mustang.services.threaded" {
     try {
       variables.progress.setStatus( "Adding indexes and constraints." );
 
-      for ( var row in variables.fks ) {
-        var removeNonExisting = "
-          DELETE
-          FROM #escapePgKeyword( row.from_table )#
-          WHERE NOT EXISTS (
-            SELECT #escapePgKeyword( row.to_table )#.*
-            FROM #escapePgKeyword( row.to_table )#
-            WHERE #escapePgKeyword( row.to_table )#.#row.to_column# = #row.from_table#.#row.from_column#
-          );
-        ";
-
-        var debugInfo = variables.destinationQueryService.execute( "EXPLAIN " & removeNonExisting );
-        variables.progress.setStatus( "Removal impact: " & debugInfo[ "QUERY PLAN" ][ 1 ] );
-
-        transaction {
-          try {
-            variables.progress.setStatus( "#row.to_table# - #row.from_table#: Removing FK mismatched rows" );
-            variables.destinationQueryService.execute( removeNonExisting );
-            transactionCommit( );
-          } catch ( any e ) {
-            transactionRollback( );
-          }
-        }
-
-        var fkSql = "
-          ALTER TABLE IF EXISTS #escapePgKeyword( row.to_table )#
-            ADD CONSTRAINT #row.name#
-              FOREIGN KEY ( #row.from_column# )
-              REFERENCES #escapePgKeyword( row.to_table )# (#row.to_column#)
-              MATCH SIMPLE ON UPDATE CASCADE ON DELETE CASCADE;
-        ";
-
-        transaction {
-          try {
-            variables.progress.setStatus( "#row.to_table# - #row.from_table#: Adding indexes" );
-            variables.destinationQueryService.execute( fkSql );
-            transactionCommit( );
-          } catch ( any e ) {
-            transactionRollback( );
-          }
-        }
+      transaction {
+        removeOldForeignKeys( );
+        transactionCommit( );
       }
 
+      for ( var row in variables.fks ) {
+        transaction {
+          addIndexes( row );
+          transactionCommit( );
+        }
+
+        transaction {
+          removeNonExisting( row );
+          addForeignKeys( row );
+        }
+      }
       variables.progress.setStatus( "Indexes and constraints added." );
     } catch ( any e ) {
       variables.progress.done( );
@@ -313,15 +286,12 @@ component accessors=true extends="mustang.services.threaded" {
     }
   }
 
-  private array function getBatches( required struct input, numeric maxRows = 0 ) {
+  private array function getBatches( required string tableName ) {
+    variables.progress.setStatus( "#tableName#: Generating batches..." );
+
+    var input =  variables.items[ tableName ];
     var result = [ ];
-
     var inputSize = input.data.len( );
-
-    if ( maxRows > 0 ) {
-      inputSize = maxRows;
-    }
-
     var batchSize = min( this.insertBatchSize, inputSize );
 
     if ( batchSize > 0 ) {
@@ -347,6 +317,7 @@ component accessors=true extends="mustang.services.threaded" {
           {
             "sql" = input.insert & this.eol & batch.toList( ',' & this.eol ) & ';',
             "params" = params,
+            "table" = input.table,
             "batchNr" = batchNr
           }
         );
@@ -359,14 +330,15 @@ component accessors=true extends="mustang.services.threaded" {
     return result;
   }
 
-  private void function queueBatch( required string sql, required array params, required numeric batchNr ) {
+  private void function executeBatch( required struct batch ) {
     var threadName = getThreadName( );
     try {
       transaction {
         try {
-          variables.destinationQueryService.execute( sql, params );
+          variables.progress.setStatus( "#batch.table#: Running batch #batch.batchNr#..." );
+          variables.destinationQueryService.execute( batch.sql, batch.params );
           transactionCommit( );
-          variables.progress.setStatus( "Batch #batchNr# done." );
+          variables.progress.setStatus( "#batch.table#: Batch #batch.batchNr# done." );
         } catch ( any e ) {
           transactionRollback( );
           rethrow;
@@ -381,10 +353,27 @@ component accessors=true extends="mustang.services.threaded" {
     }
   }
 
-  private void function validateData( ) {
+  private void function clearBatches( required string tableName ) {
     var threadName = getThreadName( );
     try {
-      for ( var tableName in variables.sortedTableKeys ) {
+      structDelete( variables.items, tableName );
+      variables.progress.setStatus( "#tableName# batch cleared" );
+    } catch ( any e ) {
+      variables.progress.done( );
+      rethrow;
+    } finally {
+      variables.progress.updateProgress( );
+      cleanUpThread( threadName );
+    }
+  }
+
+  private void function validateData( ) {
+    var threadName = getThreadName( );
+
+    variables.progress.setStatus( "Validating data" );
+
+    try {
+      for ( var tableName in variables.sortedTableNames ) {
         var destinationRows = 0;
 
         try {
@@ -402,16 +391,17 @@ component accessors=true extends="mustang.services.threaded" {
           variables.progress.setStatus( "VALIDATION: #tableName# ERROR: difference in row count" );
         }
       }
-
-      variables.progress.setStatus( "QUEUE: Done" );
-      variables.progress.addToTotal( );
-      addTask( transferDone );
+      variables.progress.setStatus( "Validating done" );
     } catch ( any e ) {
       variables.progress.done( );
       rethrow;
     } finally {
       variables.progress.updateProgress( );
       cleanUpThread( threadName );
+
+      variables.progress.setStatus( "QUEUE: Done" );
+      variables.progress.addToTotal( );
+      addTask( transferDone );
     }
   }
 
@@ -430,36 +420,21 @@ component accessors=true extends="mustang.services.threaded" {
   // HELPER METHODS:
 
   private struct function getSqlInsertForTable( required string tableName ) {
+    variables.progress.setStatus( "#tableName#: Formatting data..." );
+
     var columns = variables.tables[ tableName ].columns;
-    var escapedColumns = [ ];
-
-    for ( var column in columns ) {
-      escapedColumns.add( escapePgKeyword( column.name ) );
-    }
-
-    escapedColumns = escapedColumns.toList( );
-
     var sourceData = getSourceData( tableName );
     var numberOfRows = sourceData.recordCount;
-
-    variables.progress.setStatus( "Done retrieving records from '#tableName#'." );
-
     var pages = [ ];
     var rowNr = 0;
     var currentPage = 1;
-    var questionMarks = [ ];
-    var numberOfColumns = columns.len( );
-    questionMarks.set( 1, numberOfColumns, "?" );
-    questionMarks = questionMarks.toList( );
-
-    variables.progress.setStatus( "Formatting data for destination." );
 
     for ( var row in sourceData ) {
       rowNr++;
 
       if ( rowNr MOD this.pageSize == 0 ) {
         currentPage++;
-        variables.progress.setStatus( "Formatting rows #rowNr#/#numberOfRows#." );
+        variables.progress.setStatus( "#tableName#: Formatting rows #rowNr#/#numberOfRows#..." );
       }
 
       if ( !arrayIsDefined( pages, currentPage ) ) {
@@ -473,7 +448,7 @@ component accessors=true extends="mustang.services.threaded" {
         paramsPerRow.add( formatValueForPostgres( value, column ) );
       }
 
-      pages[ currentPage ].sql.add( "( #questionMarks# )" );
+      pages[ currentPage ].sql.add( "( #getParamPlaceholders( columns )# )" );
       pages[ currentPage ].params.add( paramsPerRow );
     }
 
@@ -488,12 +463,10 @@ component accessors=true extends="mustang.services.threaded" {
 
     var result = {
       "table" = tableName,
-      "insert" = 'INSERT INTO "public"."#tableName#" ( #escapedColumns# ) VALUES ',
+      "insert" = 'INSERT INTO #escapePgKeyword( tableName )# ( #toEscapedColumnList( columns )# ) VALUES ',
       "data" = sql,
       "params" = params
     };
-
-    variables.progress.setStatus( "'#tableName#' Done. (#result.data.len( )#)" );
 
     return result;
   }
@@ -510,55 +483,47 @@ component accessors=true extends="mustang.services.threaded" {
 
     var rowCount = variables.tables[ tableName ].rowCount;
 
-    variables.progress.setStatus( "Retrieving #rowCount# row(s) from '#tableName#'..." );
+    variables.progress.setStatus( "#tableName#: Retrieving #rowCount# row(s)..." );
 
-    var result = variables.sourceQueryService.execute(
-      "SELECT #arrayToList( mssqlColumnList )# FROM [#tableName#]",
-      { }
-    );
-
-    return result;
+    return variables.sourceQueryService.execute( "SELECT #arrayToList( mssqlColumnList )# FROM [#tableName#]" );
   }
 
   private string function createDestinationTables( ) {
-    transaction {
-      try {
-        for ( var tableName in variables.sortedTableKeys ) {
-          var table = variables.tables[ tableName ].columns;
-          var columns = [ ];
+    try {
+      for ( var tableName in variables.sortedTableNames ) {
+        var table = variables.tables[ tableName ].columns;
+        var columns = [ ];
 
-          for ( var column in table ) {
-            var sqlColumnDefinition = escapePgKeyword( column.name );
+        for ( var column in table ) {
+          var sqlColumnDefinition = escapePgKeyword( column.name );
 
-            sqlColumnDefinition &= ' #asPostgresDatatype( column.datatype )#';
+          sqlColumnDefinition &= ' #asPostgresDatatype( column.datatype )#';
 
-            if ( hasLength( column ) ) {
-              sqlColumnDefinition &= ' (#column.length#)';
-            }
-
-            if ( !column.allowNulls ) {
-              sqlColumnDefinition &= ' NOT NULL';
-            }
-
-            if ( column.pk ) {
-              sqlColumnDefinition &= ' PRIMARY KEY';
-            }
-
-            arrayAppend( columns, sqlColumnDefinition );
+          if ( hasLengthProperty( column ) ) {
+            sqlColumnDefinition &= ' (#column.length#)';
           }
 
-          var sql = "CREATE TABLE public.#escapePgKeyword( tableName )# ( #columns.toList( )# );";
+          if ( !column.allowNulls ) {
+            sqlColumnDefinition &= ' NOT NULL';
+          }
 
-          variables.destinationQueryService.execute( sql );
+          if ( column.pk ) {
+            sqlColumnDefinition &= ' PRIMARY KEY';
+          }
 
-          variables.progress.setStatus( "Table '#tableName#' created." );
+          arrayAppend( columns, sqlColumnDefinition );
         }
-        transactionCommit( );
-        variables.progress.setStatus( "All tables created." );
-      } catch ( any e ) {
-        transactionRollback( );
-        rethrow;
+
+        var sql = "CREATE TABLE public.#escapePgKeyword( tableName )# ( #columns.toList( )# );";
+
+        variables.destinationQueryService.execute( sql );
+        variables.progress.setStatus( "Table '#tableName#' created." );
       }
+      transactionCommit( );
+      variables.progress.setStatus( "All tables created." );
+    } catch ( any e ) {
+      transactionRollback( );
+      rethrow;
     }
   }
 
@@ -576,11 +541,25 @@ component accessors=true extends="mustang.services.threaded" {
                 INNER JOIN syscolumns sc2 ON sf.rkeyid = sc2.id AND sf.rkey = sc2.colid
 
       WHERE     so.xtype IN ( 'f', 'pk' )
+        AND     object_name( sf.fkeyid ) IN ( :tables )
+        AND     object_name( sf.rkeyid ) IN ( :tables )
 
       ORDER BY  [from_table], [from_column]
     ";
 
-    return variables.sourceQueryService.execute( sql );
+    return variables.sourceQueryService.execute( sql, { "tables" = { value = variables.sortedTableNames, list = true } } );
+  }
+
+  private void function clearDestinationDatabase( ) {
+    variables.progress.setStatus( "Clearing destination database." );
+    variables.destinationQueryService.execute( "
+      DROP SCHEMA public CASCADE;
+      CREATE SCHEMA public;
+      GRANT ALL ON SCHEMA public TO postgres;
+      GRANT ALL ON SCHEMA public TO public;
+      COMMENT ON SCHEMA public IS 'standard public schema';
+    " );
+    variables.progress.setStatus( "Destination database cleared." );
   }
 
   private void function removeOldForeignKeys( ) {
@@ -596,22 +575,31 @@ component accessors=true extends="mustang.services.threaded" {
   }
 
   private struct function formatValueForPostgres( required any value, required struct md ) {
+    if ( !isSimpleValue( value ) ) {
+      variables.logService.dumpToFile( arguments );
+      throw( "Not a simple value" );
+    }
+
     var result = {
-      value = value,
-      cfsqltype = asCFDatatype( md.datatype ),
-      null = false
+      "value" = value,
+      "cfsqltype" = asCFDatatype( md.datatype )
     };
 
-    if ( !isSimpleValue( value ) || ( !len( trim( value ) ) && md.allownulls ) ) {
-      result.null = true;
-      return result;
+    if ( !len( trim( value ) ) ) {
+      if ( md.allowNulls ) {
+        result[ "null" ] = true;
+        // structDelete( result, "value" );
+        return result;
+      } else {
+        throw( "#column.name#: Empty cell, does not allow nulls." );
+      }
     }
 
     switch ( md.datatype ) {
       case "tinyint":
       case "boolean":
         result.value = createObject( "java", "java.lang.Boolean" ).init( !!value );
-        return result;
+        break;
 
       case "date":
       case "time":
@@ -619,7 +607,11 @@ component accessors=true extends="mustang.services.threaded" {
       case "smalldatetime":
       case "datetime":
         result.value = createODBCDateTime( value );
-        return result;
+        break;
+
+      case "int":
+        result.value = javaCast( "int", value );
+        break;
     }
 
     return result;
@@ -629,17 +621,41 @@ component accessors=true extends="mustang.services.threaded" {
     switch ( datatype ) {
       case "int":
         return "integer";
+
       case "tinyint":
       case "boolean":
         return "bit";
+
       case "date":
       case "time":
       case "timestamp":
       case "smalldatetime":
       case "datetime":
         return "timestamp";
+
       case "text":
         return "longvarchar";
+
+      // bigint
+      // char
+      // blob
+      // clob
+      // date
+      // decimal
+      // double
+      // float
+      // idstamp
+      // longnvarchar
+      // money
+      // money4
+      // numeric
+      // real
+      // refcursor
+      // smallint
+      // time
+      // tinyint
+      // varchar
+      // nvarchar
     }
 
     return datatype;
@@ -660,7 +676,7 @@ component accessors=true extends="mustang.services.threaded" {
     return datatype;
   }
 
-  private boolean function hasLength( required struct column ) {
+  private boolean function hasLengthProperty( required struct column ) {
     switch ( column.datatype ) {
       case "int":
       case "bit":
@@ -684,5 +700,68 @@ component accessors=true extends="mustang.services.threaded" {
     }
 
     return keyword;
+  }
+
+  private string function toEscapedColumnList( columns ) {
+    var result = [ ];
+
+    for ( var column in columns ) {
+      result.add( escapePgKeyword( column.name ) );
+    }
+
+    return result.toList( );
+  }
+
+  private void function addIndexes( required struct row ) {
+    var sql = 'CREATE INDEX IDX_#replace( createUUID(), '-', '', 'all' )# ON #escapePgKeyword( row.from_table )# ( #escapePgKeyword( row.from_column )# );';
+    variables.destinationQueryService.execute( sql );
+  }
+
+  private void function removeNonExisting( required struct row ) {
+    if ( "#row.from_table#.#row.from_column#" == "#row.to_table#.#row.to_column#" ) {
+      return;
+    }
+
+    var sql = '
+      FROM    #row.from_table# l
+      WHERE   NOT l.#row.from_column# IS NULL
+        AND   NOT EXISTS
+              (
+                SELECT  NULL
+                FROM    #row.to_table# r
+                WHERE   r.#row.to_column# = l.#row.from_column#
+              )
+    ';
+
+    variables.progress.setStatus( "FK: #row.from_table# -> #row.to_table# - Counting rows without matching PK..." );
+    var numberOfRowsToDelete = variables.destinationQueryService.execute( 'SELECT COUNT ( * ) AS total ' & sql );
+
+    if ( numberOfRowsToDelete[ "total" ][ 1 ] > 0 ) {
+      variables.progress.setStatus( "FK: #row.from_table# -> #row.to_table# - Removing #numberOfRowsToDelete[ "total" ][ 1 ]# row(s) from '#row.from_table#.#row.from_column#' missing corresponding '#row.to_table#.#row.to_column#'." );
+      variables.destinationQueryService.execute( 'DELETE ' & sql );
+    }
+  }
+
+  private void function addForeignKeys( required struct row ) {
+    if ( "#row.from_table#.#row.from_column#" == "#row.to_table#.#row.to_column#" ) {
+      return;
+    }
+
+    var sql = "
+      ALTER TABLE IF EXISTS #escapePgKeyword( row.from_table )#
+        ADD CONSTRAINT #row.name# FOREIGN KEY ( #row.from_column# )
+          REFERENCES #escapePgKeyword( row.to_table )#( #row.to_column# )
+          MATCH SIMPLE ON UPDATE CASCADE ON DELETE CASCADE;
+    ";
+
+    variables.progress.setStatus( "FK: #row.from_table# -> #row.to_table# - Adding FK #row.name#" );
+    variables.destinationQueryService.execute( sql );
+  }
+
+  private string function getParamPlaceholders( columns ) {
+    var result = [ ];
+    var numberOfColumns = columns.len( );
+    result.set( 1, numberOfColumns, "?" );
+    return result.toList( );
   }
 }

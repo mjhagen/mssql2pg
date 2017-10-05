@@ -1,5 +1,7 @@
 var $importProgress, $importStatus, $importBtn, $abortBtn, prevItem, progressUpdate;
-var intervalTime = 150;
+var defaultInterval = 150;
+var intervalIncrease = 75;
+var intervalTime = defaultInterval;
 
 $( function( ) {
   $importProgress = $( '#import-progress' );
@@ -21,9 +23,9 @@ $( function( ) {
   $( document ).on( 'click', '#abort', function( ) {
     $.ajax( ajaxUrl( 'adminapi:transfer', 'abortQueue' ), {
       complete : function( ) {
-        // $importStatus.html( '' );
-        // hideProgress( );
-        // clearTimeout( progressUpdate );
+        $importStatus.html( '' );
+        hideProgress( );
+        clearTimeout( progressUpdate );
       }
     } );
   } );
@@ -55,9 +57,9 @@ function checkProgress( ) {
 
         // progress complete:
         if( data.current == prevItem ) {
-          intervalTime += 500;
+          intervalTime += intervalIncrease;
         } else {
-          intervalTime = 500;
+          intervalTime = defaultInterval;
         }
 
         progressUpdate = setTimeout( checkProgress, intervalTime );

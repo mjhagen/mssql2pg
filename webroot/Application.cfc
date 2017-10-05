@@ -7,7 +7,6 @@ component extends="framework.one" {
   this.mappings[ "/mustang" ] = expandPath( "../../mustang-shared" );
 
   this.sessionManagement = true;
-  this.datasources = deserializeJSON( fileRead( request.root & "/config/datasources.json" ) );
 
   variables.framework = {
     base = "/root",
@@ -26,6 +25,12 @@ component extends="framework.one" {
       }
     }
   };
+
+  this.datasources = deserializeJSON( fileRead( request.root & "/config/datasources.json" ) );
+
+  if ( !structKeyExists( server, "lucee" ) ) {
+    arrayAppend( variables.framework.diLocations, "/mustang/compatibility/acf" );
+  }
 
   public void function setupRequest( ) {
     request.reset = isFrameworkReloadRequest( );

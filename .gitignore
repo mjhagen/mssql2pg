@@ -1,5 +1,5 @@
-config/datasources.json
-config/test-datasources.json
+config/*.json
 .DS_Store
 webroot/framework
 webroot/tests/testbox
+logs/
